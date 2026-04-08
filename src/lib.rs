@@ -221,8 +221,8 @@ pub enum Error {
 #[repr(u8)]
 pub enum MatchMode {
     Exact,
-    Fuzzy(f64),
-    Both(f64),
+    Fuzzy { threshold: f64 },
+    Both { threshold: f64 },
 }
 
 #[derive(Debug, Clone)]
@@ -728,10 +728,10 @@ pub fn find_match(
 
     match mode {
         MatchMode::Exact => find_exact_match(&haystack, &needle, permissive),
-        MatchMode::Fuzzy(threshold) => {
+        MatchMode::Fuzzy { threshold } => {
             find_fuzzy_match(&haystack, &needle, threshold, permissive, false)
         }
-        MatchMode::Both(threshold) => find_exact_match(&haystack, &needle, permissive)
+        MatchMode::Both { threshold } => find_exact_match(&haystack, &needle, permissive)
             .or_else(|| find_fuzzy_match(&haystack, &needle, threshold, permissive, false)),
     }
 }
