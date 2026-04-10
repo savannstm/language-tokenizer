@@ -1,21 +1,21 @@
 [package]
 name = "language-tokenizer"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["savannstm <savannstm@gmail.com>"]
-edition = "2021"
+edition = "2024"
 description = "Text tokenizer for linguistic purposes, such as text matching. Supports more than 40 languages, including English, French, Russian, Japanese, Thai etc."
 documentation = "https://docs.rs/language-tokenizer"
 homepage = "https://crates.io/crates/language-tokenizer"
 repository = "https://github.com/savannstm/language-tokenizer"
 readme = "README.md"
-rust-version = "1.83.0"
+rust-version = "1.88.0"
 license-file = "LICENSE.md"
 keywords = ["tokenizer", "text", "linguistic", "language", "segmenter"]
 
 [dependencies]
 icu_segmenter = { version = "2.2.0", optional = true }
 itertools = { version = "0.14.0", optional = true }
-lindera = { version = "3.0.4", optional = true }
+lindera = { version = "3.0.5", optional = true }
 serde = { version = "1.0.228", optional = true }
 strsim = "0.11.1"
 strum = { version = "0.28.0", features = ["strum_macros"] }
