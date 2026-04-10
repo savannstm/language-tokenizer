@@ -6,7 +6,7 @@
     feature = "japanese-icu",
     feature = "chinese-icu"
 ))]
-use icu_segmenter::{options::WordBreakInvariantOptions, WordSegmenter};
+use icu_segmenter::{WordSegmenter, options::WordBreakInvariantOptions};
 #[cfg(any(
     feature = "southeast-asian",
     feature = "japanese-icu",
@@ -41,7 +41,7 @@ use unicode_normalization::UnicodeNormalization;
 #[cfg(feature = "snowball")]
 use unicode_segmentation::UnicodeSegmentation;
 #[cfg(feature = "snowball")]
-use waken_snowball::{stem, Algorithm as SnowballAlgorithm};
+use waken_snowball::{Algorithm as SnowballAlgorithm, stem};
 
 #[cfg(all(
     feature = "japanese-ipadic-neologd-lindera",
@@ -201,7 +201,9 @@ impl Algorithm {
 #[derive(Debug, Error)]
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum Error {
-    #[error("No tokenizer found for algorithm {0:?}, you might want to enable a crate feature that corresponds to desired language.")]
+    #[error(
+        "No tokenizer found for algorithm {0:?}, you might want to enable a crate feature that corresponds to desired language."
+    )]
     NoTokenizer(Algorithm),
 }
 
@@ -228,8 +230,8 @@ pub enum MatchMode {
 #[derive(Debug, Clone)]
 pub struct Token {
     pub text: String,
-    pub start: usize, // char offset in original input string
-    pub len: usize,   // char length in original input string
+    pub start: u32, // char offset in original input string
+    pub len: u32,   // char length in original input string
 }
 
 impl<T> PartialEq<T> for Token
@@ -253,9 +255,9 @@ impl Eq for Token {}
 #[repr(u8)]
 pub enum MatchResult {
     /// Exact match result, containing match offset position in haystack, and match length in characters.
-    Exact((usize, usize)),
+    Exact { offset: u32, len: u32 },
     /// Fuzzy match result, containing match offset position in haystack, match length in characters, and match score as [`f64`].
-    Fuzzy((usize, usize), f64),
+    Fuzzy { offset: u32, len: u32, score: f64 },
 }
 
 #[cfg(feature = "serde")]
@@ -422,8 +424,8 @@ fn tokenize_snowball(text: &str, algorithm: Algorithm, case_sensitive: bool) -> 
 
         tokens.push(Token {
             text: token_text,
-            start,
-            len,
+            start: start as u32,
+            len: len as u32,
         });
     }
 
@@ -454,8 +456,8 @@ fn tokenize_cjk(text: &str, algorithm: Algorithm) -> Vec<Token> {
 
                             Token {
                                 text: tok.surface.into_owned(),
-                                start,
-                                len,
+                                start: start as u32,
+                                len: len as u32,
                             }
                         })
                         .collect()
@@ -483,8 +485,8 @@ fn tokenize_cjk(text: &str, algorithm: Algorithm) -> Vec<Token> {
 
                             Token {
                                 text: tok.surface.into_owned(),
-                                start,
-                                len,
+                                start: start as u32,
+                                len: len as u32,
                             }
                         })
                         .collect()
@@ -508,8 +510,8 @@ fn tokenize_cjk(text: &str, algorithm: Algorithm) -> Vec<Token> {
 
                         Token {
                             text: tok.surface.into_owned(),
-                            start,
-                            len,
+                            start: start as u32,
+                            len: len as u32,
                         }
                     })
                     .collect()
@@ -532,8 +534,8 @@ fn tokenize_cjk_icu(text: &str, _algorithm: Algorithm) -> Vec<Token> {
 
             Token {
                 text: slice.to_owned(),
-                start: text[..i].chars().count(),
-                len: slice.chars().count(),
+                start: text[..i].chars().count() as u32,
+                len: slice.chars().count() as u32,
             }
         })
         .collect()
@@ -551,8 +553,8 @@ fn tokenize_southeast_asian(text: &str, _algorithm: Algorithm) -> Vec<Token> {
 
             Token {
                 text: slice.to_owned(),
-                start: text[..i].chars().count(),
-                len: slice.chars().count(),
+                start: text[..i].chars().count() as u32,
+                len: slice.chars().count() as u32,
             }
         })
         .collect()
@@ -633,13 +635,13 @@ fn find_exact_match(haystack: &[Token], needle: &[Token], permissive: bool) -> O
             window == needle
         };
 
-        matches.then_some(MatchResult::Exact((
-            window[0].start,
-            needle.iter().fold(0, |mut acc, a| {
+        matches.then_some(MatchResult::Exact {
+            offset: window[0].start,
+            len: needle.iter().fold(0, |mut acc, a| {
                 acc += a.len;
                 acc
             }),
-        )))
+        })
     })
 }
 
@@ -675,16 +677,14 @@ fn find_fuzzy_match(
             score >= threshold
         };
 
-        passes_threshold.then_some(MatchResult::Fuzzy(
-            (
-                window[0].start,
-                window.iter().fold(0, |mut acc, a| {
-                    acc += a.len;
-                    acc
-                }),
-            ),
+        passes_threshold.then_some(MatchResult::Fuzzy {
+            offset: window[0].start,
+            len: window.iter().fold(0, |mut acc, a| {
+                acc += a.len;
+                acc
+            }),
             score,
-        ))
+        })
     })
 }
 
@@ -774,20 +774,20 @@ pub fn find_all_matches(
     }
 
     let mut results = Vec::new();
-    let mut offset = 0;
+    let mut offset = 0u32;
 
-    while offset < haystack.len() {
-        let slice = &haystack[offset..];
+    while offset < haystack.len() as u32 {
+        let slice = &haystack[offset as usize..];
         let found = find_match(slice, needle, mode, permissive);
 
         match found {
             Some(t) => {
                 match t {
-                    MatchResult::Exact((start, _)) => {
+                    MatchResult::Exact { offset: start, .. } => {
                         let absolute_start = offset + start;
                         offset = absolute_start + 1;
                     }
-                    MatchResult::Fuzzy((start, _), _) => {
+                    MatchResult::Fuzzy { offset: start, .. } => {
                         let absolute_start = offset + start;
                         offset = absolute_start + 1;
                     }
