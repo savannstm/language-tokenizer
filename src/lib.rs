@@ -20,9 +20,15 @@ use itertools::Itertools;
     feature = "chinese-lindera",
     feature = "korean-lindera"
 ))]
-use lindera::{
-    dictionary::load_dictionary, mode::Mode, segmenter::Segmenter, tokenizer::Tokenizer,
-};
+use lindera::{dictionary::load_dictionary, mode::Mode, segmenter::Segmenter};
+#[cfg(any(
+    feature = "japanese-ipadic-neologd-lindera",
+    feature = "japanese-ipadic-lindera",
+    feature = "japanese-unidic-lindera",
+    feature = "chinese-lindera",
+    feature = "korean-lindera"
+))]
+use lindera_analysis::tokenizer::Tokenizer;
 use num_enum::{FromPrimitive, IntoPrimitive};
 #[cfg(feature = "serde")]
 use serde::{
