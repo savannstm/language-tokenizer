@@ -1,33 +1,13 @@
 #![warn(clippy::all, clippy::pedantic)]
 #![doc = include_str!("../README.md")]
 
-#[cfg(any(
-    feature = "southeast-asian",
-    feature = "japanese-icu",
-    feature = "chinese-icu"
-))]
+#[cfg(feature = "icu")]
 use icu_segmenter::{WordSegmenter, options::WordBreakInvariantOptions};
-#[cfg(any(
-    feature = "southeast-asian",
-    feature = "japanese-icu",
-    feature = "chinese-icu"
-))]
+#[cfg(feature = "icu")]
 use itertools::Itertools;
-#[cfg(any(
-    feature = "japanese-ipadic-neologd-lindera",
-    feature = "japanese-ipadic-lindera",
-    feature = "japanese-unidic-lindera",
-    feature = "chinese-lindera",
-    feature = "korean-lindera"
-))]
+#[cfg(feature = "lindera")]
 use lindera::{dictionary::load_dictionary, mode::Mode, segmenter::Segmenter};
-#[cfg(any(
-    feature = "japanese-ipadic-neologd-lindera",
-    feature = "japanese-ipadic-lindera",
-    feature = "japanese-unidic-lindera",
-    feature = "chinese-lindera",
-    feature = "korean-lindera"
-))]
+#[cfg(feature = "lindera")]
 use lindera_analysis::tokenizer::Tokenizer;
 use num_enum::{FromPrimitive, IntoPrimitive};
 #[cfg(feature = "serde")]
@@ -40,6 +20,8 @@ use serde::{
 use std::fmt;
 #[cfg(feature = "snowball")]
 use std::mem::transmute;
+#[cfg(feature = "lindera")]
+use std::{cell::RefCell, path::PathBuf, sync::OnceLock};
 use strum_macros::Display;
 use thiserror::Error;
 #[cfg(feature = "snowball")]
@@ -49,91 +31,137 @@ use unicode_segmentation::UnicodeSegmentation;
 #[cfg(feature = "snowball")]
 use waken_snowball::{Algorithm as SnowballAlgorithm, stem};
 
-#[cfg(all(
-    feature = "japanese-ipadic-neologd-lindera",
-    any(
-        feature = "japanese-ipadic-lindera",
-        feature = "japanese-unidic-lindera",
-        feature = "japanese-icu",
-    )
-))]
+#[cfg(all(feature = "japanese-lindera", feature = "japanese-icu"))]
 compile_error!("Only one Japanese tokenizer feature may be enabled at a time.");
-
-#[cfg(all(
-    feature = "japanese-ipadic-lindera",
-    any(
-        feature = "japanese-ipadic-neologd-lindera",
-        feature = "japanese-unidic-lindera",
-        feature = "japanese-icu",
-    )
-))]
-compile_error!("Only one Japanese tokenizer feature may be enabled at a time.");
-
-#[cfg(all(
-    feature = "japanese-unidic-lindera",
-    any(
-        feature = "japanese-ipadic-neologd-lindera",
-        feature = "japanese-ipadic-lindera",
-        feature = "japanese-icu",
-    )
-))]
-compile_error!("Only one Japanese tokenizer feature may be enabled at a time.");
-
-#[cfg(all(
-    feature = "japanese-icu",
-    any(
-        feature = "japanese-ipadic-neologd-lindera",
-        feature = "japanese-ipadic-lindera",
-        feature = "japanese-unidic-lindera",
-    )
-))]
-compile_error!("Only one Japanese tokenizer feature may be enabled at a time.");
-
 #[cfg(all(feature = "chinese-lindera", feature = "chinese-icu"))]
 compile_error!("Only one Chinese tokenizer feature may be enabled at a time.");
 
-#[cfg(any(
-    feature = "japanese-ipadic-neologd-lindera",
-    feature = "japanese-ipadic-lindera",
-    feature = "japanese-unidic-lindera",
-    feature = "chinese-lindera",
-    feature = "korean-lindera"
-))]
-thread_local! {
-    static JAPANESE_TOKENIZER: Tokenizer =
-        Tokenizer::new(Segmenter::new(
-            Mode::Normal,
-            load_dictionary(
-                #[cfg(feature = "japanese-ipadic-neologd-lindera")]
-                "embedded://ipadic-neologd",
+/// Defines a CJK Lindera tokenizer: a lazily-built, per-thread [`Tokenizer`] that loads its
+/// dictionary from the path set via [`set_dictionary_path`], falling back to `$embedded_uri`
+/// (an `embedded://...` Lindera URI) if no path was set.
+#[cfg(feature = "lindera")]
+macro_rules! lindera_language {
+    ($module:ident, $algorithm:expr, $embedded_uri:expr) => {
+        mod $module {
+            use super::{
+                Algorithm, Error, Mode, OnceLock, PathBuf, RefCell, Segmenter, Tokenizer,
+                load_dictionary,
+            };
 
-                #[cfg(feature = "japanese-ipadic-lindera")]
-                "embedded://ipadic",
+            pub(crate) static DICTIONARY_PATH: OnceLock<PathBuf> = OnceLock::new();
 
-                #[cfg(feature = "japanese-unidic-lindera")]
-                "embedded://unidic",
+            thread_local! {
+                static TOKENIZER: RefCell<Option<Tokenizer>> = const { RefCell::new(None) };
+            }
 
-                #[cfg(not(any(
-                    feature = "japanese-ipadic-neologd-lindera",
-                    feature = "japanese-ipadic-lindera",
-                    feature = "japanese-unidic-lindera"
-                )))]
-                "",
-            ).unwrap(),
-            None,
-        ));
-    static KOREAN_TOKENIZER: Tokenizer =
-        Tokenizer::new(Segmenter::new(
-            Mode::Normal,
-            load_dictionary("embedded://ko-dic").unwrap(),
-            None,
-        ));
-    static CHINESE_TOKENIZER: Tokenizer =
-        Tokenizer::new(Segmenter::new(
-            Mode::Normal,
-            load_dictionary("embedded://cc-cedict").unwrap(),
-            None,
-        ));
+            /// Runs `f` against this language's tokenizer, building it on first use.
+            pub(crate) fn with<R>(f: impl FnOnce(&Tokenizer) -> R) -> Result<R, Error> {
+                let algorithm: Algorithm = $algorithm;
+
+                TOKENIZER.with(|cell| {
+                    if cell.borrow().is_none() {
+                        let uri = DICTIONARY_PATH
+                            .get()
+                            .map(|path| format!("file://{}", path.display()));
+                        let dictionary = load_dictionary(uri.as_deref().unwrap_or($embedded_uri))
+                            .map_err(|_| Error::NoDictionary(algorithm))?;
+
+                        *cell.borrow_mut() = Some(Tokenizer::new(Segmenter::new(
+                            Mode::Normal,
+                            dictionary,
+                            None,
+                        )));
+                    }
+
+                    Ok(f(cell.borrow().as_ref().unwrap()))
+                })
+            }
+        }
+    };
+}
+
+/// Which embedded Japanese dictionary to fall back to when no path is set via
+/// [`set_dictionary_path`]. Multiple `japanese-lindera-embed-*` features may be enabled at
+/// once - which one is actually *used* is a runtime choice, made via
+/// [`set_japanese_embedded_dictionary`].
+#[cfg(feature = "japanese-lindera")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JapaneseDictionaryKind {
+    Ipadic,
+    IpadicNeologd,
+    Unidic,
+}
+
+#[cfg(feature = "japanese-lindera")]
+static JAPANESE_EMBEDDED_KIND: OnceLock<JapaneseDictionaryKind> = OnceLock::new();
+
+/// Selects which embedded Japanese dictionary [`tokenize`] falls back to when no path is
+/// set via [`set_dictionary_path`]. Only takes effect for `kind`s whose matching
+/// `japanese-lindera-embed-*` feature was compiled in; has no effect otherwise.
+///
+/// Must be called before the first Japanese [`tokenize`] call; later calls are ignored once
+/// the Japanese tokenizer has already been built for the current thread.
+#[cfg(feature = "japanese-lindera")]
+pub fn set_japanese_embedded_dictionary(kind: JapaneseDictionaryKind) {
+    let _ = JAPANESE_EMBEDDED_KIND.set(kind);
+}
+
+/// Resolves the embedded Japanese dictionary URI to fall back to: whichever kind
+/// [`set_japanese_embedded_dictionary`] selected, or - if none was chosen - the best
+/// dictionary actually compiled in, preferring `ipadic-neologd` > `unidic` > `ipadic`.
+#[cfg(feature = "japanese-lindera")]
+fn japanese_embedded_uri() -> &'static str {
+    let kind = JAPANESE_EMBEDDED_KIND.get().copied().unwrap_or_else(|| {
+        if cfg!(feature = "japanese-lindera-embed-ipadic-neologd") {
+            JapaneseDictionaryKind::IpadicNeologd
+        } else if cfg!(feature = "japanese-lindera-embed-unidic") {
+            JapaneseDictionaryKind::Unidic
+        } else {
+            JapaneseDictionaryKind::Ipadic
+        }
+    });
+
+    match kind {
+        JapaneseDictionaryKind::Ipadic => "embedded://ipadic",
+        JapaneseDictionaryKind::IpadicNeologd => "embedded://ipadic-neologd",
+        JapaneseDictionaryKind::Unidic => "embedded://unidic",
+    }
+}
+
+#[cfg(feature = "japanese-lindera")]
+lindera_language!(japanese, Algorithm::Japanese, crate::japanese_embedded_uri());
+#[cfg(feature = "chinese-lindera")]
+lindera_language!(chinese, Algorithm::Chinese, "embedded://cc-cedict");
+#[cfg(feature = "korean-lindera")]
+lindera_language!(korean, Algorithm::Korean, "embedded://ko-dic");
+
+/// Sets the directory a CJK tokenizer loads its Lindera dictionary from at first use.
+///
+/// If `path` is `None` (or this is never called for `algorithm`), the tokenizer falls back
+/// to its embedded dictionary, if the crate was built with a matching `*-embed-*` feature -
+/// otherwise tokenizing that language returns [`Error::NoDictionary`].
+///
+/// Must be called before the first [`tokenize`] call for `algorithm`; later calls are
+/// ignored once that language's tokenizer has already been built for the current thread.
+#[cfg(feature = "lindera")]
+pub fn set_dictionary_path(algorithm: Algorithm, path: Option<PathBuf>) {
+    let Some(path) = path else { return };
+
+    match algorithm {
+        #[cfg(feature = "japanese-lindera")]
+        Algorithm::Japanese => {
+            let _ = japanese::DICTIONARY_PATH.set(path);
+        }
+        #[cfg(feature = "chinese-lindera")]
+        Algorithm::Chinese => {
+            let _ = chinese::DICTIONARY_PATH.set(path);
+        }
+        #[cfg(feature = "korean-lindera")]
+        Algorithm::Korean => {
+            let _ = korean::DICTIONARY_PATH.set(path);
+        }
+        _ => {}
+    }
 }
 
 #[derive(
@@ -211,6 +239,11 @@ pub enum Error {
         "No tokenizer found for algorithm {0:?}, you might want to enable a crate feature that corresponds to desired language."
     )]
     NoTokenizer(Algorithm),
+
+    #[error(
+        "No dictionary loaded for algorithm {0:?} - set its dictionary path before tokenizing, or check that the path points at a valid dictionary."
+    )]
+    NoDictionary(Algorithm),
 }
 
 /// Specifies mode for matching text in [`match_text`] function.
@@ -438,93 +471,51 @@ fn tokenize_snowball(text: &str, algorithm: Algorithm, case_sensitive: bool) -> 
     tokens
 }
 
-#[cfg(any(
-    feature = "japanese-ipadic-neologd-lindera",
-    feature = "japanese-ipadic-lindera",
-    feature = "japanese-unidic-lindera",
-    feature = "chinese-lindera",
-    feature = "korean-lindera",
-    feature = "japanese-icu",
-    feature = "chinese-icu"
-))]
-fn tokenize_cjk(text: &str, algorithm: Algorithm) -> Vec<Token> {
+#[cfg(feature = "lindera")]
+fn convert_lindera_tokens<'a>(
+    text: &str,
+    tokens: impl IntoIterator<Item = lindera::token::Token<'a>>,
+) -> Vec<Token> {
+    tokens
+        .into_iter()
+        .map(|tok| {
+            let start = text[..tok.byte_start].chars().count();
+            let len = tok.surface.chars().count();
+
+            Token {
+                text: tok.surface.into_owned(),
+                start: start as u32,
+                len: len as u32,
+            }
+        })
+        .collect()
+}
+
+/// Dispatches to whichever CJK tokenizer backend is compiled in for `algorithm`. Each match
+/// arm is individually feature-gated, so a language with no backend enabled simply falls
+/// through to the catch-all [`Error::NoTokenizer`].
+fn tokenize_cjk(text: &str, algorithm: Algorithm) -> Result<Vec<Token>, Error> {
     match algorithm {
+        #[cfg(feature = "chinese-lindera")]
         Algorithm::Chinese => {
-            #[cfg(feature = "chinese-lindera")]
-            {
-                CHINESE_TOKENIZER.with(|t| {
-                    t.tokenize(text)
-                        .unwrap()
-                        .into_iter()
-                        .map(|tok| {
-                            let start = text[..tok.byte_start].chars().count();
-                            let len = tok.surface.chars().count();
-
-                            Token {
-                                text: tok.surface.into_owned(),
-                                start: start as u32,
-                                len: len as u32,
-                            }
-                        })
-                        .collect()
-                })
-            }
-
-            #[cfg(feature = "chinese-icu")]
-            tokenize_cjk_icu(text, algorithm)
+            chinese::with(|t| convert_lindera_tokens(text, t.tokenize(text).unwrap()))
         }
+        #[cfg(all(feature = "chinese-icu", not(feature = "chinese-lindera")))]
+        Algorithm::Chinese => Ok(tokenize_cjk_icu(text, algorithm)),
 
+        #[cfg(feature = "japanese-lindera")]
         Algorithm::Japanese => {
-            #[cfg(any(
-                feature = "japanese-ipadic-neologd-lindera",
-                feature = "japanese-ipadic-lindera",
-                feature = "japanese-unidic-lindera",
-            ))]
-            {
-                JAPANESE_TOKENIZER.with(|t| {
-                    t.tokenize(text)
-                        .unwrap()
-                        .into_iter()
-                        .map(|tok| {
-                            let start = text[..tok.byte_start].chars().count();
-                            let len = tok.surface.chars().count();
+            japanese::with(|t| convert_lindera_tokens(text, t.tokenize(text).unwrap()))
+        }
+        #[cfg(all(feature = "japanese-icu", not(feature = "japanese-lindera")))]
+        Algorithm::Japanese => Ok(tokenize_cjk_icu(text, algorithm)),
 
-                            Token {
-                                text: tok.surface.into_owned(),
-                                start: start as u32,
-                                len: len as u32,
-                            }
-                        })
-                        .collect()
-                })
-            }
-
-            #[cfg(feature = "japanese-icu")]
-            tokenize_cjk_icu(text, algorithm)
+        #[cfg(feature = "korean-lindera")]
+        Algorithm::Korean => {
+            korean::with(|t| convert_lindera_tokens(text, t.tokenize(text).unwrap()))
         }
 
-        Algorithm::Korean =>
-        {
-            #[cfg(feature = "korean-lindera")]
-            KOREAN_TOKENIZER.with(|t| {
-                t.tokenize(text)
-                    .unwrap()
-                    .into_iter()
-                    .map(|tok| {
-                        let start = text[..tok.byte_start].chars().count();
-                        let len = tok.surface.chars().count();
-
-                        Token {
-                            text: tok.surface.into_owned(),
-                            start: start as u32,
-                            len: len as u32,
-                        }
-                    })
-                    .collect()
-            })
-        }
-
-        _ => unreachable!(),
+        _ => Err(Error::NoTokenizer(algorithm)),
     }
 }
 
@@ -603,16 +594,7 @@ pub fn tokenize(
         #[cfg(feature = "snowball")]
         return Ok(tokenize_snowball(text, algorithm, case_sensitive));
     } else if algorithm.is_cjk() {
-        #[cfg(any(
-            feature = "japanese-ipadic-neologd-lindera",
-            feature = "japanese-ipadic-lindera",
-            feature = "japanese-unidic-lindera",
-            feature = "chinese-lindera",
-            feature = "korean-lindera",
-            feature = "japanese-icu",
-            feature = "chinese-icu"
-        ))]
-        return Ok(tokenize_cjk(text, algorithm));
+        return tokenize_cjk(text, algorithm);
     } else if algorithm.is_southeast_asian() {
         #[cfg(feature = "southeast-asian")]
         return Ok(tokenize_southeast_asian(text, algorithm));

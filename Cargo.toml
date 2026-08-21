@@ -1,6 +1,6 @@
 [package]
 name = "language-tokenizer"
-version = "0.3.1"
+version = "0.4.0"
 authors = ["savannstm <savannstm@gmail.com>"]
 edition = "2024"
 description = "Text tokenizer for linguistic purposes, such as text matching. Supports more than 40 languages, including English, French, Russian, Japanese, Thai etc."
@@ -31,7 +31,7 @@ num_enum = "0.7.6"
 full = [
     "southeast-asian",
     "snowball",
-    "japanese-ipadic-neologd-lindera",
+    "japanese-lindera",
     "chinese-lindera",
     "korean-lindera",
 ]
@@ -42,48 +42,55 @@ snowball = [
     "dep:unicode-segmentation",
 ]
 
-japanese-ipadic-neologd-lindera = [
-    "dep:lindera",
-    "dep:lindera-analysis",
-    "lindera/embed-ipadic-neologd",
-    "lindera-analysis/embed-ipadic-neologd",
-]
-japanese-ipadic-lindera = [
-    "dep:lindera",
-    "dep:lindera-analysis",
-    "lindera/embed-ipadic",
-    "lindera-analysis/embed-ipadic",
-]
-japanese-unidic-lindera = [
-    "dep:lindera",
-    "dep:lindera-analysis",
-    "lindera/embed-unidic",
-    "lindera-analysis/embed-unidic",
-]
-chinese-lindera = [
-    "dep:lindera",
-    "dep:lindera-analysis",
-    "lindera/embed-cc-cedict",
-    "lindera-analysis/embed-cc-cedict",
-]
-korean-lindera = [
-    "dep:lindera",
-    "dep:lindera-analysis",
-    "lindera/embed-ko-dic",
-    "lindera-analysis/embed-ko-dic",
-]
+cjk = []
+lindera = []
+icu = []
+
+japanese-lindera = ["dep:lindera", "dep:lindera-analysis", "cjk", "lindera"]
+chinese-lindera = ["dep:lindera", "dep:lindera-analysis", "cjk", "lindera"]
+korean-lindera = ["dep:lindera", "dep:lindera-analysis", "cjk", "lindera"]
 
 japanese-icu = [
     "dep:icu_segmenter",
     "dep:itertools",
     "icu_segmenter/compiled_data",
     "icu_segmenter/auto",
+    "cjk",
+    "icu",
 ]
 chinese-icu = [
     "dep:icu_segmenter",
     "dep:itertools",
     "icu_segmenter/compiled_data",
     "icu_segmenter/auto",
+    "cjk",
+    "icu",
+]
+
+japanese-lindera-embed-ipadic = [
+    "japanese-lindera",
+    "lindera/embed-ipadic",
+    "lindera-analysis/embed-ipadic",
+]
+japanese-lindera-embed-ipadic-neologd = [
+    "japanese-lindera",
+    "lindera/embed-ipadic-neologd",
+    "lindera-analysis/embed-ipadic-neologd",
+]
+japanese-lindera-embed-unidic = [
+    "japanese-lindera",
+    "lindera/embed-unidic",
+    "lindera-analysis/embed-unidic",
+]
+chinese-lindera-embed = [
+    "chinese-lindera",
+    "lindera/embed-cc-cedict",
+    "lindera-analysis/embed-cc-cedict",
+]
+korean-lindera-embed = [
+    "korean-lindera",
+    "lindera/embed-ko-dic",
+    "lindera-analysis/embed-ko-dic",
 ]
 
 southeast-asian = [
@@ -91,6 +98,7 @@ southeast-asian = [
     "dep:itertools",
     "icu_segmenter/compiled_data",
     "icu_segmenter/lstm",
+    "icu",
 ]
 
 serde = ["dep:serde"]
