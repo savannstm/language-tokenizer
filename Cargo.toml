@@ -1,6 +1,6 @@
 [package]
 name = "language-tokenizer"
-version = "0.4.0"
+version = "0.4.1"
 authors = ["savannstm <savannstm@gmail.com>"]
 edition = "2024"
 description = "Text tokenizer for linguistic purposes, such as text matching. Supports more than 40 languages, including English, French, Russian, Japanese, Thai etc."
@@ -9,23 +9,13 @@ homepage = "https://crates.io/crates/language-tokenizer"
 repository = "https://github.com/savannstm/language-tokenizer"
 readme = "README.md"
 rust-version = "1.88.0"
-license-file = "LICENSE.md"
+license = "WTFPL"
 keywords = ["tokenizer", "text", "linguistic", "language", "segmenter"]
+categories = ["text-processing"]
+exclude = ["/.gitignore", "/.rustfmt.toml"]
 
-[dependencies]
-icu_segmenter = { version = "2.3.0", optional = true }
-itertools = { version = "0.15.0", optional = true }
-lindera = { version = "5.3.0", optional = true }
-lindera-analysis = { version = "5.3.0", optional = true }
-serde = { version = "1.0.229", optional = true }
-strsim = "0.11.1"
-strum = { version = "0.28.0", features = ["strum_macros"] }
-strum_macros = "0.28.0"
-thiserror = "2.0.20"
-unicode-normalization = { version = "0.1.25", optional = true }
-unicode-segmentation = { version = "1.13.3", optional = true }
-waken_snowball = { version = "0.1.0", optional = true }
-num_enum = "0.7.6"
+[package.metadata.cargo-machete]
+ignored = ["strum"]
 
 [features]
 full = [
@@ -102,3 +92,18 @@ southeast-asian = [
 ]
 
 serde = ["dep:serde"]
+
+[dependencies]
+icu_segmenter = { version = "2.3.0", optional = true }
+itertools = { version = "0.15.0", optional = true }
+lindera = { version = "6.2.0", optional = true }
+lindera-analysis = { version = "6.2.0", optional = true }
+num_enum = "0.7.6"
+serde = { version = "1.0.229", optional = true }
+strsim = "0.11.1"
+strum = { version = "0.28.0", features = ["strum_macros"] }
+strum_macros = "0.28.0"
+thiserror = "2.0.21"
+unicode-normalization = { version = "0.1.25", optional = true }
+unicode-segmentation = { version = "1.13.3", optional = true }
+waken_snowball = { version = "0.1.0", optional = true }

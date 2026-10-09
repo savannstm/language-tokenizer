@@ -43,10 +43,7 @@ compile_error!("Only one Chinese tokenizer feature may be enabled at a time.");
 macro_rules! lindera_language {
     ($module:ident, $algorithm:expr, $embedded_uri:expr) => {
         mod $module {
-            use super::{
-                Algorithm, Error, Mode, OnceLock, PathBuf, RefCell, Segmenter, Tokenizer,
-                load_dictionary,
-            };
+            use super::{Algorithm, Error, Mode, OnceLock, PathBuf, RefCell, Segmenter, Tokenizer, load_dictionary};
 
             pub(crate) static DICTIONARY_PATH: OnceLock<PathBuf> = OnceLock::new();
 
@@ -66,11 +63,7 @@ macro_rules! lindera_language {
                         let dictionary = load_dictionary(uri.as_deref().unwrap_or($embedded_uri))
                             .map_err(|_| Error::NoDictionary(algorithm))?;
 
-                        *cell.borrow_mut() = Some(Tokenizer::new(Segmenter::new(
-                            Mode::Normal,
-                            dictionary,
-                            None,
-                        )));
+                        *cell.borrow_mut() = Some(Tokenizer::new(Segmenter::new(Mode::Normal, dictionary, None)));
                     }
 
                     Ok(f(cell.borrow().as_ref().unwrap()))
@@ -85,7 +78,7 @@ macro_rules! lindera_language {
 /// once - which one is actually *used* is a runtime choice, made via
 /// [`set_japanese_embedded_dictionary`].
 #[cfg(feature = "japanese-lindera")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum JapaneseDictionaryKind {
     Ipadic,
     IpadicNeologd,
@@ -164,9 +157,7 @@ pub fn set_dictionary_path(algorithm: Algorithm, path: Option<PathBuf>) {
     }
 }
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Display, FromPrimitive, IntoPrimitive,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Display, FromPrimitive, IntoPrimitive)]
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 #[cfg_attr(feature = "serde", serde(into = "i8", try_from = "i8"))]
 #[repr(i8)]
@@ -236,12 +227,14 @@ impl Algorithm {
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum Error {
     #[error(
-        "No tokenizer found for algorithm {0:?}, you might want to enable a crate feature that corresponds to desired language."
+        "No tokenizer found for algorithm {0:?}, you might want to enable a crate feature that corresponds to desired \
+         language."
     )]
     NoTokenizer(Algorithm),
 
     #[error(
-        "No dictionary loaded for algorithm {0:?} - set its dictionary path before tokenizing, or check that the path points at a valid dictionary."
+        "No dictionary loaded for algorithm {0:?} - set its dictionary path before tokenizing, or check that the path \
+         points at a valid dictionary."
     )]
     NoDictionary(Algorithm),
 }
@@ -258,7 +251,7 @@ pub enum Error {
 ///
 /// Threshold should be in range of 0.0 and 1.0. Adjust threshold for your use case. Generally thresholds above 0.7-0.75 are fine, and generally you should use higher thresholds for smaller inputs.
 ///
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 #[repr(u8)]
 pub enum MatchMode {
     Exact,
@@ -266,7 +259,7 @@ pub enum MatchMode {
     Both { threshold: f64 },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct Token {
     pub text: String,
     pub start: u32, // char offset in original input string
@@ -290,7 +283,7 @@ impl PartialEq for Token {
 
 impl Eq for Token {}
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(u8)]
 pub enum MatchResult {
     /// Exact match result, containing match offset position in haystack, and match length in characters.
@@ -331,12 +324,8 @@ impl<'de> Deserialize<'de> for MatchResult {
             where
                 A: SeqAccess<'de>,
             {
-                let a: usize = seq
-                    .next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(0, &self))?;
-                let b: usize = seq
-                    .next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(1, &self))?;
+                let a: usize = seq.next_element()?.ok_or_else(|| de::Error::invalid_length(0, &self))?;
+                let b: usize = seq.next_element()?.ok_or_else(|| de::Error::invalid_length(1, &self))?;
 
                 if let Some(score) = seq.next_element::<f64>()? {
                     Ok(MatchResult::Fuzzy((a, b), score))
@@ -394,13 +383,9 @@ impl<'de> Deserialize<'de> for MatchMode {
             where
                 A: SeqAccess<'de>,
             {
-                let tag: u8 = seq
-                    .next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(0, &self))?;
+                let tag: u8 = seq.next_element()?.ok_or_else(|| de::Error::invalid_length(0, &self))?;
 
-                let value: f64 = seq
-                    .next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(1, &self))?;
+                let value: f64 = seq.next_element()?.ok_or_else(|| de::Error::invalid_length(1, &self))?;
 
                 match tag {
                     0 => Ok(MatchMode::Exact),
@@ -472,10 +457,7 @@ fn tokenize_snowball(text: &str, algorithm: Algorithm, case_sensitive: bool) -> 
 }
 
 #[cfg(feature = "lindera")]
-fn convert_lindera_tokens<'a>(
-    text: &str,
-    tokens: impl IntoIterator<Item = lindera::token::Token<'a>>,
-) -> Vec<Token> {
+fn convert_lindera_tokens<'a>(text: &str, tokens: impl IntoIterator<Item = lindera::token::Token<'a>>) -> Vec<Token> {
     tokens
         .into_iter()
         .map(|tok| {
@@ -497,23 +479,17 @@ fn convert_lindera_tokens<'a>(
 fn tokenize_cjk(text: &str, algorithm: Algorithm) -> Result<Vec<Token>, Error> {
     match algorithm {
         #[cfg(feature = "chinese-lindera")]
-        Algorithm::Chinese => {
-            chinese::with(|t| convert_lindera_tokens(text, t.tokenize(text).unwrap()))
-        }
+        Algorithm::Chinese => chinese::with(|t| convert_lindera_tokens(text, t.tokenize(text).unwrap())),
         #[cfg(all(feature = "chinese-icu", not(feature = "chinese-lindera")))]
         Algorithm::Chinese => Ok(tokenize_cjk_icu(text, algorithm)),
 
         #[cfg(feature = "japanese-lindera")]
-        Algorithm::Japanese => {
-            japanese::with(|t| convert_lindera_tokens(text, t.tokenize(text).unwrap()))
-        }
+        Algorithm::Japanese => japanese::with(|t| convert_lindera_tokens(text, t.tokenize(text).unwrap())),
         #[cfg(all(feature = "japanese-icu", not(feature = "japanese-lindera")))]
         Algorithm::Japanese => Ok(tokenize_cjk_icu(text, algorithm)),
 
         #[cfg(feature = "korean-lindera")]
-        Algorithm::Korean => {
-            korean::with(|t| convert_lindera_tokens(text, t.tokenize(text).unwrap()))
-        }
+        Algorithm::Korean => korean::with(|t| convert_lindera_tokens(text, t.tokenize(text).unwrap())),
 
         _ => Err(Error::NoTokenizer(algorithm)),
     }
@@ -585,11 +561,7 @@ fn tokenize_southeast_asian(text: &str, _algorithm: Algorithm) -> Vec<Token> {
 /// assert_eq!(tokens, vec!["that", "someon", "who", "can", "rizz", "just", "like", "a", "skibidi", "zoomer", "slang", "rock", "67"])
 /// ```
 ///
-pub fn tokenize(
-    text: &str,
-    algorithm: Algorithm,
-    case_sensitive: bool,
-) -> Result<Vec<Token>, Error> {
+pub fn tokenize(text: &str, algorithm: Algorithm, case_sensitive: bool) -> Result<Vec<Token>, Error> {
     if algorithm.is_snowball() {
         #[cfg(feature = "snowball")]
         return Ok(tokenize_snowball(text, algorithm, case_sensitive));
@@ -704,21 +676,14 @@ fn find_fuzzy_match(
 /// assert!(find_match(&haystack, &needle, MatchMode::Exact, false).is_some());
 /// ```
 ///
-pub fn find_match(
-    haystack: &[Token],
-    needle: &[Token],
-    mode: MatchMode,
-    permissive: bool,
-) -> Option<MatchResult> {
+pub fn find_match(haystack: &[Token], needle: &[Token], mode: MatchMode, permissive: bool) -> Option<MatchResult> {
     if needle.len() == 0 || needle.len() > haystack.len() {
         return None;
     }
 
     match mode {
         MatchMode::Exact => find_exact_match(&haystack, &needle, permissive),
-        MatchMode::Fuzzy { threshold } => {
-            find_fuzzy_match(&haystack, &needle, threshold, permissive, false)
-        }
+        MatchMode::Fuzzy { threshold } => find_fuzzy_match(&haystack, &needle, threshold, permissive, false),
         MatchMode::Both { threshold } => find_exact_match(&haystack, &needle, permissive)
             .or_else(|| find_fuzzy_match(&haystack, &needle, threshold, permissive, false)),
     }
@@ -751,12 +716,7 @@ pub fn find_match(
 /// assert!(find_match(&haystack, &needle, MatchMode::Exact, false).is_some());
 /// ```
 ///
-pub fn find_all_matches(
-    haystack: &[Token],
-    needle: &[Token],
-    mode: MatchMode,
-    permissive: bool,
-) -> Vec<MatchResult> {
+pub fn find_all_matches(haystack: &[Token], needle: &[Token], mode: MatchMode, permissive: bool) -> Vec<MatchResult> {
     if needle.len() == 0 || needle.len() > haystack.len() {
         return Vec::new();
     }
